@@ -218,7 +218,9 @@ h2 .modetag{ margin-right:auto; }
 .slot.perso b{ font-weight:600; }
 .slot[role="button"]{ cursor:pointer; border-radius:10px; }
 .slot[role="button"]:hover{ background:var(--glass-2); }
-.chev{ color:var(--faint); font-size:20px; padding:0 4px; }
+.chev{ color:var(--faint); font-size:20px; padding:0 4px; min-width:16px; text-align:center; }
+.sess.tap{ cursor:pointer; border-radius:10px; margin:0 -8px; padding:8px; }
+.sess.tap:hover{ background:var(--glass-2); }
 .wkpanel{ padding:14px 10px 16px; }
 @media (min-width:720px){ .wkpanel{ padding:18px; } }
 .wk{ --h:46px; }
@@ -274,7 +276,7 @@ body.sheet-open .dock{ display:none; }
 .chips.left{ justify-content:flex-start; }
 .dchips{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; }
 .dchips .chip{ justify-content:center; padding:8px 0; font-size:13.5px; }
-.dchips .chip::before{ display:none; }
+.dchips .chip::before,.when .chip::before{ display:none; }
 .kinds .chip::before{ background:none; border:1.5px solid var(--c); }
 .kinds .chip[data-v="Perso"]::before{ border-style:dashed; }
 .wheels{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -614,8 +616,8 @@ function viewChrono(){
     ${S.running?`<button class="btn stop bigbtn" data-action="stop">Arrêter</button>`:`<button class="btn primary bigbtn" data-action="start">Démarrer</button>`}
   </section>
   <section class="panel">
-    <h2>Sessions du jour</h2>
-    ${today.length?`<ul class="list">${today.map(s=>`<li class="sess"><i style="background:${scol(s.subject)}"></i><span class="grow">${SNAME[s.subject]}</span><span class="t">${hm(s.start)} – ${s.live?"en cours":hm(s.end)}</span><span class="d">${fmtDur(dur(s))}</span>${s.live?`<span style="width:28px"></span>`:`<button class="x" data-action="delsess" data-id="${s.id}" aria-label="Supprimer la session">×</button>`}</li>`).join("")}</ul>`:`<p class="empty">Aucune session aujourd’hui. Choisis une matière et démarre.</p>`}
+    <h2>Sessions du jour <button class="link" data-action="addsess">Ajouter une session</button></h2>
+    ${today.length?`<ul class="list">${today.map(s=>`<li class="sess ${s.live?"":"tap"}" ${s.live?"":`data-action="editsess" data-id="${s.id}" role="button" tabindex="0" aria-label="Modifier la session de ${SNAME[s.subject]}"`}><i style="background:${scol(s.subject)}"></i><span class="grow">${SNAME[s.subject]}</span><span class="t">${hm(s.start)} – ${s.live?"en cours":hm(s.end)}</span><span class="d">${fmtDur(dur(s))}</span><span class="chev" aria-hidden="true">${s.live?"":"›"}</span></li>`).join("")}</ul>`:`<p class="empty">Aucune session aujourd’hui. Choisis une matière et démarre.</p>`}
   </section>
   <section class="panel">
     <h2>Cette semaine par matière</h2>
@@ -720,6 +722,49 @@ function openSheet(opts){
     updateDur();
   });
 }
+function openSessSheet(id){
+  const n=new Date(),nowM=n.getHours()*60+n.getMinutes(),end=Math.max(60,Math.floor(nowM/5)*5);
+  const ed=id?S.sessions.find(x=>x.id===id):null;
+  if(ed){
+    const a=new Date(ed.start),b=new Date(ed.end),r5=m=>Math.min(23*60+55,Math.round(m/5)*5);
+    const off=Math.round((new Date(n.getFullYear(),n.getMonth(),n.getDate())-new Date(a.getFullYear(),a.getMonth(),a.getDate()))/864e5);
+    const sm=r5(a.getHours()*60+a.getMinutes()),em=r5(dkey(a)===dkey(b)?b.getHours()*60+b.getMinutes():23*60+55);
+    draft={type:"sess",id,days:[0],off:String(off),subject:ed.subject,start:sm,end:em,orig:{off:String(off),start:sm,end:em}};
+  }else draft={type:"sess",days:[0],off:"0",subject:S.lastSubject,start:end-60,end};
+  const when=[["0","Aujourd’hui"],["1","Hier"],["2","Avant-hier"]];
+  if(+draft.off>2)when.push([draft.off,fmtDay(dkey(addDays(n,-draft.off)))]);
+  const chip=(k,v,label,col,on)=>`<button class="chip ${on?"on":""}" style="--c:${col}" data-action="dsel" data-k="${k}" data-v="${v}">${label}</button>`;
+  const el=document.getElementById("sheet");
+  el.innerHTML=`<div class="sheet-bg" data-action="closesheet"></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="${ed?"Modifier la session":"Ajouter une session"}">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="sheet-head"><h2>${ed?"Modifier la session":"Ajouter une session"}</h2></div>
+    <p class="lbl">Quand</p>
+    <div class="chips left when">${when.map(([v,l])=>chip("off",v,l,"var(--accent)",v===draft.off)).join("")}</div>
+    <p class="lbl">Matière</p>
+    <div class="chips left">${SUBJECTS.map(([id,nm])=>chip("subject",id,nm,scol(id),id===draft.subject)).join("")}</div>
+    <div class="wheels">
+      <div><p class="lbl">Début</p>${wheel("start")}</div>
+      <div><p class="lbl">Fin</p>${wheel("end")}</div>
+    </div>
+    <p class="durline" id="durLine"></p>
+    <div class="sheet-actions">
+      ${ed?`<button class="btn stop" data-action="delsheet">Supprimer</button>`:`<button class="btn" data-action="closesheet">Annuler</button>`}
+      <button class="btn primary" data-action="savesheet" id="saveBtn">${ed?"Enregistrer":"Ajouter"}</button>
+    </div>
+  </div>`;
+  document.body.classList.add("sheet-open");
+  requestAnimationFrame(()=>{
+    el.classList.add("open");
+    setWheel("start",draft.start,false);setWheel("end",draft.end,false);
+    el.querySelectorAll(".wcol").forEach(c=>c.addEventListener("scroll",onWheelScroll,{passive:true}));
+    updateDur();
+  });
+}
+function sessRange(){
+  const t=new Date();const base=new Date(t.getFullYear(),t.getMonth(),t.getDate()-(+draft.off)).getTime();
+  return [base+draft.start*60000,base+draft.end*60000];
+}
 function closeSheet(){
   const el=document.getElementById("sheet");el.classList.remove("open");
   document.body.classList.remove("sheet-open");draft=null;
@@ -750,9 +795,15 @@ function onWheelScroll(e){
 function updateDur(){
   const d=draft.end-draft.start,el=document.getElementById("durLine"),b=document.getElementById("saveBtn");
   if(!el)return;
-  el.classList.toggle("bad",d<=0);
-  el.textContent=d>0?`${fromMin(draft.start)} – ${fromMin(draft.end)}, ${fmtDur(d*60000)}`:"La fin doit être après le début.";
-  b.disabled=d<=0||!draft.days.length;
+  let err=d<=0?"La fin doit être après le début.":"";
+  if(!err&&draft.type==="sess"){
+    const [a,z2]=sessRange();
+    if(z2>Date.now())err="La fin ne peut pas être dans le futur.";
+    else if(S.sessions.some(x=>x.id!==draft.id&&x.start<z2&&x.end>a)||(S.running&&S.running.start<z2))err="Ça chevauche une session déjà enregistrée.";
+  }
+  el.classList.toggle("bad",!!err);
+  el.textContent=err||`${fromMin(draft.start)} – ${fromMin(draft.end)}, ${fmtDur(d*60000)}`;
+  b.disabled=!!err||!draft.days.length;
 }
 document.addEventListener("click",e=>{
   const it=e.target.closest(".witem");if(!it)return;
@@ -780,6 +831,15 @@ function sheetSelect(b){
 }
 function saveSheet(){
   draft.start=readWheel("start");draft.end=readWheel("end");
+  if(draft.type==="sess"){
+    updateDur();if(document.getElementById("saveBtn").disabled)return;
+    const [a,b]=sessRange();
+    if(draft.id){
+      const x=S.sessions.find(o=>o.id===draft.id),o=draft.orig;
+      if(x){x.subject=draft.subject;if(!(o.off===draft.off&&o.start===draft.start&&o.end===draft.end)){x.start=a;x.end=b;}}
+    }else{S.sessions.push({id:uid(),subject:draft.subject,start:a,end:b});S.lastSubject=draft.subject;}
+    closeSheet();save();render();return;
+  }
   if(draft.end<=draft.start||!draft.days.length){updateDur();return;}
   const base={start:fromMin(draft.start),end:fromMin(draft.end),subject:draft.subject,kind:draft.kind,place:document.getElementById("placeIn").value.trim(),mode:draft.mode};
   if(draft.id){const x=S.slots.find(o=>o.id===draft.id);if(x)Object.assign(x,base,{day:draft.days[0]});}
@@ -1000,12 +1060,17 @@ document.addEventListener("click",e=>{
     case "delsess":S.sessions=S.sessions.filter(x=>x.id!==id);save();render();break;
     case "delslot":S.slots=S.slots.filter(x=>x.id!==id);save();render();break;
     case "editslot":openSheet({id});break;
+    case "addsess":openSessSheet();break;
+    case "editsess":openSessSheet(id);break;
     case "addslot":openSheet({day:edtView==="jour"?edtDay:dow(new Date())});break;
     case "addat":{const r=b.getBoundingClientRect(),hh=parseFloat(getComputedStyle(b).getPropertyValue("--h"))||46;openSheet({day:+id,h:Math.min(22,+b.dataset.h0+Math.floor((e.clientY-r.top)/hh))});break;}
     case "dsel":if(draft)sheetSelect(b);break;
     case "closesheet":closeSheet();break;
     case "savesheet":if(draft)saveSheet();break;
-    case "delsheet":if(draft&&confirm("Supprimer ce créneau ?")){S.slots=S.slots.filter(x=>x.id!==draft.id);closeSheet();save();render();}break;
+    case "delsheet":if(!draft)break;
+      if(draft.type==="sess"){if(confirm("Supprimer cette session ?")){S.sessions=S.sessions.filter(x=>x.id!==draft.id);closeSheet();save();render();}}
+      else if(confirm("Supprimer ce créneau ?")){S.slots=S.slots.filter(x=>x.id!==draft.id);closeSheet();save();render();}
+      break;
     case "edtmode":S.edtMode=id;save();render();break;
     case "edtview":edtView=id;render();break;
     case "copyperso":S.slots.filter(x=>modeOf(x)==="type"&&isPerso(x)).forEach(x=>S.slots.push({...x,id:uid(),mode:"vacances"}));save();render();break;
