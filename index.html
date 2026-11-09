@@ -192,6 +192,28 @@ ul.list{ list-style:none; margin:0; padding:0; }
 .hbar .track b{ display:block; height:100%; border-radius:99px; box-shadow:0 0 10px currentColor; }
 .hbar span:last-child{ text-align:right; font-family:var(--f-num); color:var(--muted); }
 
+/* Calendrier du mois */
+.cal-head{ margin-bottom:10px; }
+.cal-stats{ display:flex; justify-content:space-between; gap:12px; margin:0 0 14px; font-size:12.5px; color:var(--muted); }
+.cal-stats b{ display:block; font:500 17px/1.2 var(--f-num); color:var(--text); }
+.cal-stats div:last-child{ text-align:right; }
+.cal{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+.cal .dn{ text-align:center; font-size:11px; color:var(--faint); padding-bottom:2px; }
+.cal .c{ position:relative; aspect-ratio:1; border-radius:11px; border:1px solid var(--edge); background:transparent; color:var(--muted); font:500 13px/1 var(--f-num); display:flex; align-items:center; justify-content:center; padding:0; }
+.cal .c.out{ visibility:hidden; }
+.cal .c.fut{ opacity:.35; }
+.cal .c[style*="--l"]{ background:color-mix(in srgb, var(--l) 30%, transparent); border-color:color-mix(in srgb, var(--l) 55%, transparent); color:var(--text); }
+.cal .c.top{ box-shadow:0 0 12px color-mix(in srgb, var(--l) 45%, transparent); }
+.cal .c.today{ outline:1.5px solid var(--text); outline-offset:1px; }
+.cal .c.sel{ background:color-mix(in srgb, var(--l, var(--muted)) 60%, transparent); color:var(--text); }
+.cal .c.sel:not(.today){ outline:1.5px solid var(--accent); outline-offset:1px; }
+.cal-head .navarrow:disabled{ opacity:.3; }
+.cal-leg{ display:flex; justify-content:center; flex-wrap:wrap; gap:4px 12px; margin:14px 0 0; font-size:11.5px; color:var(--muted); }
+.cal-leg i{ display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
+.cal-day{ margin-top:14px; padding-top:12px; border-top:1px solid var(--edge); }
+.cal-day h3{ margin:0 0 6px; font-size:13.5px; font-weight:550; display:flex; justify-content:space-between; }
+.cal-day h3 span{ font-family:var(--f-num); }
+
 /* Formulaires */
 .form{ display:grid; gap:10px; grid-template-columns:repeat(2,minmax(0,1fr)); }
 .form > *{ min-width:0; }
@@ -643,6 +665,35 @@ function viewAccueil(){
   ${cloudFoot()}`;
 }
 
+let calOff=0,calSel=null;
+const LEVELS=[[6,"#7fe3ff","6 h+"],[5,"#4fe39a","5 h"],[4,"#f2d94e","4 h"],[3,"#ff9f43","3 h"],[2,"#ff5f6d","2 h"],[0,"#5b6478","< 2 h"]];
+const levelOf=ms=>ms<=0?null:LEVELS.find(([h])=>ms>=h*3600000);
+function monthCal(){
+  const t=new Date(),m0=new Date(t.getFullYear(),t.getMonth()+calOff,1),y=m0.getFullYear(),mo=m0.getMonth();
+  const nd=new Date(y,mo+1,0).getDate(),lead=dow(m0),tk=todayKey();
+  const tot={};S.sessions.forEach(x=>{const d=new Date(x.start);if(d.getFullYear()===y&&d.getMonth()===mo){const k=dkey(d);tot[k]=(tot[k]||0)+dur(x);}});
+  if(S.running){const d=new Date(S.running.start);if(d.getFullYear()===y&&d.getMonth()===mo){const k=dkey(d);tot[k]=(tot[k]||0)+Date.now()-S.running.start;}}
+  const keys=[...Array(nd)].map((_,i)=>dkey(new Date(y,mo,i+1))),past=keys.filter(k=>k<=tk);
+  const mtot=keys.reduce((a,k)=>a+(tot[k]||0),0),avg=past.length?mtot/past.length:0;
+  const cells=[...Array(lead)].map(()=>`<span class="c out"></span>`).concat(keys.map((k,i)=>{
+    const lv=levelOf(tot[k]||0),fut=k>tk;
+    return `<button class="c ${fut?"fut":""} ${k===tk?"today":""} ${k===calSel?"sel":""} ${lv&&lv[0]===6?"top":""}" ${lv?`style="--l:${lv[1]}"`:""} data-action="calday" data-id="${k}" ${fut?"disabled":""} aria-label="${k} : ${fmtDur(tot[k]||0)}">${i+1}</button>`;}));
+  let det="";
+  if(calSel&&keys.includes(calSel)){
+    const l=sessionsOn(calSel),ent=bySubject(l),mx=Math.max(...ent.map(e=>e[1]),1);
+    const [yy,mm,dd]=calSel.split("-").map(Number);
+    det=`<div class="cal-day"><h3>${cap(new Date(yy,mm-1,dd).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"}))}<span>${fmtDur(total(l))}</span></h3>
+    ${ent.length?ent.map(([id,ms])=>`<div class="hbar"><span>${SNAME[id]}</span><span class="track"><b style="width:${ms/mx*100}%;background:${scol(id)};color:${scol(id)}"></b></span><span>${fmtDur(ms)}</span></div>`).join(""):`<p class="empty">Rien d’enregistré ce jour-là.</p>`}</div>`;
+  }
+  const title=cap(m0.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}));
+  return `<section class="panel">
+    <div class="wk-nav cal-head"><button class="navarrow" data-action="calprev" aria-label="Mois précédent">‹</button><div><b>${title}</b>${calOff?`<button class="link" data-action="calnow">Revenir à ce mois</button>`:`<span class="muted">ce mois-ci</span>`}</div><button class="navarrow" data-action="calnext" aria-label="Mois suivant" ${calOff>=0?"disabled":""}>›</button></div>
+    <div class="cal-stats"><div>total du mois<b>${fmtDur(mtot)}</b></div><div>moyenne par jour<b>${fmtDur(avg)}</b></div></div>
+    <div class="cal">${["L","M","M","J","V","S","D"].map(d=>`<span class="dn">${d}</span>`).join("")}${cells.join("")}</div>
+    <div class="cal-leg">${[...LEVELS].reverse().map(([,c,n])=>`<span><i style="background:${c}"></i>${n}</span>`).join("")}</div>
+    ${det}
+  </section>`;
+}
 function viewChrono(){
   const tk=todayKey(),sub=S.running?S.running.subject:S.lastSubject;
   const today=sessionsOn(tk).sort((a,b)=>b.start-a.start);
@@ -668,7 +719,8 @@ function viewChrono(){
   <section class="panel">
     <h2>Cette semaine par matière</h2>
     ${went.length?went.map(([id,ms])=>`<div class="hbar"><span>${SNAME[id]}</span><span class="track"><b style="width:${ms/wmax*100}%;background:${scol(id)};color:${scol(id)}"></b></span><span>${fmtDur(ms)}</span></div>`).join(""):`<p class="empty">Les stats apparaîtront après ta première session.</p>`}
-  </section>`;
+  </section>
+  ${monthCal()}`;
 }
 
 let edtDay=dow(new Date()),edtView="semaine",weekOff=0,showAllEv=false,importMsg="";
@@ -1174,6 +1226,10 @@ document.addEventListener("click",e=>{
     case "doimport":doImport();break;
     case "allev":showAllEv=!showAllEv;render();break;
     case "addsess":openSessSheet();break;
+    case "calprev":calOff--;calSel=null;render();break;
+    case "calnext":if(calOff<0){calOff++;calSel=null;render();}break;
+    case "calnow":calOff=0;calSel=null;render();break;
+    case "calday":calSel=calSel===id?null:id;render();break;
     case "editsess":openSessSheet(id);break;
     case "addslot":openSheet({day:edtView==="jour"?edtDay:dow(new Date())});break;
     case "addat":{const r=b.getBoundingClientRect(),hh=parseFloat(getComputedStyle(b).getPropertyValue("--h"))||46;openSheet({day:+id,date:b.dataset.date,h:Math.min(22,+b.dataset.h0+Math.floor((e.clientY-r.top)/hh))});break;}
