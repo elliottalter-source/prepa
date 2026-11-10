@@ -218,6 +218,8 @@ ul.list{ list-style:none; margin:0; padding:0; }
 .cal-day{ margin-top:14px; padding-top:12px; border-top:1px solid var(--edge); }
 .cal-day h3{ margin:0 0 6px; font-size:13.5px; font-weight:550; display:flex; justify-content:space-between; }
 .cal-day h3 span{ font-family:var(--f-num); }
+.cal-sess{ margin-top:10px; }
+.cal-add{ margin-top:8px; padding:6px 0; }
 
 /* Formulaires */
 .form{ display:grid; gap:10px; grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -304,6 +306,7 @@ body.sheet-open .dock{ display:none; }
 .dchips{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; }
 .dchips .chip{ justify-content:center; padding:8px 0; font-size:13.5px; }
 .dchips .chip::before,.when .chip::before{ display:none; }
+.sessdate{ margin-top:8px; }
 .kinds .chip::before{ background:none; border:1.5px solid var(--c); }
 .kinds .chip[data-v="Perso"]::before{ border-style:dashed; }
 .wheels{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -688,7 +691,9 @@ function monthCal(){
     const l=sessionsOn(calSel),ent=bySubject(l),mx=Math.max(...ent.map(e=>e[1]),1);
     const [yy,mm,dd]=calSel.split("-").map(Number);
     det=`<div class="cal-day"><h3>${cap(new Date(yy,mm-1,dd).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"}))}<span>${fmtDur(total(l))}</span></h3>
-    ${ent.length?ent.map(([id,ms])=>`<div class="hbar"><span>${SNAME[id]}</span><span class="track"><b style="width:${ms/mx*100}%;background:${scol(id)};color:${scol(id)}"></b></span><span>${fmtDur(ms)}</span></div>`).join(""):`<p class="empty">Rien d’enregistré ce jour-là.</p>`}</div>`;
+    ${ent.length?ent.map(([id,ms])=>`<div class="hbar"><span>${SNAME[id]}</span><span class="track"><b style="width:${ms/mx*100}%;background:${scol(id)};color:${scol(id)}"></b></span><span>${fmtDur(ms)}</span></div>`).join(""):`<p class="empty">Rien d’enregistré ce jour-là.</p>`}
+    ${(()=>{const ss=l.filter(s=>!s.live).sort((a,b)=>a.start-b.start);return ss.length?`<ul class="list cal-sess">${ss.map(s=>`<li class="sess tap" data-action="editsess" data-id="${s.id}" role="button" tabindex="0" aria-label="Modifier la session de ${SNAME[s.subject]}"><i style="background:${scol(s.subject)}"></i><span class="grow">${SNAME[s.subject]}</span><span class="t">${hm(s.start)} – ${hm(s.end)}</span><span class="d">${fmtDur(dur(s))}</span><span class="chev" aria-hidden="true">›</span></li>`).join("")}</ul>`:"";})()}
+    <button class="link cal-add" data-action="addsessat" data-id="${calSel}">Ajouter une session ce jour-là</button></div>`;
   }
   const title=cap(m0.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}));
   return `<section class="panel">
@@ -849,7 +854,7 @@ function drawSheet(first){
     updateDur();
   });
 }
-function openSessSheet(id){
+function openSessSheet(id,dayKey){
   const n=new Date(),nowM=n.getHours()*60+n.getMinutes(),end=Math.max(60,Math.floor(nowM/5)*5);
   const ed=id?S.sessions.find(x=>x.id===id):null;
   if(ed){
@@ -857,9 +862,11 @@ function openSessSheet(id){
     const off=Math.round((new Date(n.getFullYear(),n.getMonth(),n.getDate())-new Date(a.getFullYear(),a.getMonth(),a.getDate()))/864e5);
     const sm=r5(a.getHours()*60+a.getMinutes()),em=r5(dkey(a)===dkey(b)?b.getHours()*60+b.getMinutes():23*60+55);
     draft={type:"sess",id,days:[0],off:String(off),subject:ed.subject,start:sm,end:em,orig:{off:String(off),start:sm,end:em}};
+  }else if(dayKey&&dayKey<todayKey()){
+    const k=keyDate(dayKey),off=Math.round((new Date(n.getFullYear(),n.getMonth(),n.getDate())-k)/864e5);
+    draft={type:"sess",days:[0],off:String(off),subject:S.lastSubject,start:17*60,end:18*60};
   }else draft={type:"sess",days:[0],off:"0",subject:S.lastSubject,start:end-60,end};
   const when=[["0","Aujourd’hui"],["1","Hier"],["2","Avant-hier"]];
-  if(+draft.off>2)when.push([draft.off,fmtDay(dkey(addDays(n,-draft.off)))]);
   const chip=(k,v,label,col,on)=>`<button class="chip ${on?"on":""}" style="--c:${col}" data-action="dsel" data-k="${k}" data-v="${v}">${label}</button>`;
   const el=document.getElementById("sheet");
   el.innerHTML=`<div class="sheet-bg" data-action="closesheet"></div>
@@ -868,6 +875,7 @@ function openSessSheet(id){
     <div class="sheet-head"><h2>${ed?"Modifier la session":"Ajouter une session"}</h2></div>
     <p class="lbl">Quand</p>
     <div class="chips left when">${when.map(([v,l])=>chip("off",v,l,"var(--accent)",v===draft.off)).join("")}</div>
+    <input class="field nomt sessdate" type="date" id="sessDate" value="${dkey(addDays(n,-draft.off))}" max="${todayKey()}" aria-label="Autre jour">
     <p class="lbl">Matière</p>
     <div class="chips left">${SUBJECTS.map(([id,nm])=>chip("subject",id,nm,scol(id),id===draft.subject)).join("")}</div>
     <div class="wheels">
@@ -885,6 +893,10 @@ function openSessSheet(id){
     el.classList.add("open");
     setWheel("start",draft.start,false);setWheel("end",draft.end,false);
     el.querySelectorAll(".wcol").forEach(c=>c.addEventListener("scroll",onWheelScroll,{passive:true}));
+    const sd=document.getElementById("sessDate");
+    sd.addEventListener("input",()=>{if(!sd.value)return;const t=new Date(),off=Math.round((new Date(t.getFullYear(),t.getMonth(),t.getDate())-keyDate(sd.value))/864e5);
+      if(off<0){sd.value=todayKey();return;}
+      draft.off=String(off);el.querySelectorAll('.when .chip').forEach(c=>c.classList.toggle("on",c.dataset.v===draft.off));updateDur();});
     updateDur();
   });
 }
@@ -982,6 +994,7 @@ function sheetSelect(b){
   }else{
     draft[k]=v;
     b.parentElement.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on",c.dataset.v===v));
+    if(k==="off"){const sd=document.getElementById("sessDate");if(sd)sd.value=dkey(addDays(new Date(),-v));}
   }
   updateDur();
 }
@@ -1296,6 +1309,7 @@ document.addEventListener("click",e=>{
     case "calnow":calOff=0;calSel=null;render();break;
     case "calday":calSel=calSel===id?null:id;render();break;
     case "editsess":openSessSheet(id);break;
+    case "addsessat":openSessSheet(null,id);break;
     case "addslot":openSheet({day:edtView==="jour"?edtDay:dow(new Date())});break;
     case "addat":{const r=b.getBoundingClientRect(),hh=parseFloat(getComputedStyle(b).getPropertyValue("--h"))||46;openSheet({day:+id,date:b.dataset.date,h:Math.min(22,+b.dataset.h0+Math.floor((e.clientY-r.top)/hh))});break;}
     case "dsel":if(draft)sheetSelect(b);break;
