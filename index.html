@@ -154,7 +154,12 @@ ul.list{ list-style:none; margin:0; padding:0; }
 .check svg{ width:12px; height:12px; stroke:var(--accent-ink); stroke-width:3; fill:none; opacity:0; transform:rotate(-45deg); }
 .task.done .check{ background:var(--accent); border-color:var(--accent); box-shadow:0 0 10px var(--accent); }
 .task.done .check svg{ opacity:1; }
-.task .tx{ flex:1; min-width:0; overflow-wrap:anywhere; }
+.task .tx{ flex:1; min-width:0; overflow-wrap:anywhere; background:none; border:0; padding:4px 0; margin:0; font:inherit; color:inherit; text-align:left; cursor:pointer; border-radius:8px; }
+.task .tx:hover{ color:var(--accent); }
+.task .rep{ display:inline-block; margin-left:6px; font-size:12px; color:var(--muted); white-space:nowrap; }
+.task.done .rep{ display:none; }
+.quick{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.quick .chip::before{ display:none; }
 .task.done .tx{ color:var(--faint); text-decoration:line-through; }
 .tag{ font-size:12.5px; font-weight:600; margin-right:6px; }
 .due{ font-family:var(--f-num); font-size:13px; color:var(--muted); white-space:nowrap; }
@@ -566,7 +571,7 @@ function taskItem(t){
   const late=!t.done&&t.due<todayKey();
   return `<li class="task ${t.done?"done":""}">
     <button class="check" data-action="toggle" data-id="${t.id}" aria-label="${t.done?"Marquer à faire":"Marquer fait"}"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
-    <div class="tx"><span class="tag" style="color:${scol(t.subject)}">${SNAME[t.subject]}</span>${esc(t.text)}</div>
+    <button class="tx" data-action="edittask" data-id="${t.id}" aria-label="Modifier le devoir"><span class="tag" style="color:${scol(t.subject)}">${SNAME[t.subject]}</span>${esc(t.text)}${t.rep?`<span class="rep" title="${REPS[t.rep]}">↻ ${REPS[t.rep].toLowerCase()}</span>`:""}</button>
     <span class="due ${late?"late":""}">${fmtDue(t.due)}</span>
     <button class="x" data-action="deltask" data-id="${t.id}" aria-label="Supprimer">×</button>
   </li>`;
@@ -943,6 +948,7 @@ function onWheelScroll(e){
   wheelT=setTimeout(()=>{if(!draft)return;draft.start=readWheel("start");draft.end=readWheel("end");updateDur();},90);
 }
 function updateDur(){
+  if(draft&&draft.type==="task")return;
   const d=draft.end-draft.start,el=document.getElementById("durLine"),b=document.getElementById("saveBtn");
   if(!el)return;
   let err=d<=0?"La fin doit être après le début.":"";
@@ -1005,10 +1011,66 @@ function saveSheet(){
   closeSheet();save();render();
 }
 
+/* --- Devoirs : répétition et modification --- */
+const REPS={"":"Jamais",day:"Chaque jour",week:"Chaque semaine","2week":"Toutes les 2 sem.",month:"Chaque mois"};
+const keyDate=k=>{const [y,m,d]=k.split("-").map(Number);return new Date(y,m-1,d);};
+function stepRep(k,r){const d=keyDate(k);if(r==="day")d.setDate(d.getDate()+1);else if(r==="week")d.setDate(d.getDate()+7);else if(r==="2week")d.setDate(d.getDate()+14);else if(r==="month"){const day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+1);d.setDate(Math.min(day,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));}return dkey(d);}
+function nextDue(t){let k=stepRep(t.due,t.rep);const today=todayKey();let g=0;while(k<today&&g++<400)k=stepRep(k,t.rep);return k;}
+function toggleTask(t){
+  t.done=!t.done;
+  if(t.done){
+    t.doneAt=todayKey();
+    if(t.rep&&!t.next){const n={id:uid(),text:t.text,subject:t.subject,due:nextDue(t),rep:t.rep,done:false};S.tasks.push(n);t.next=n.id;}
+  }else{
+    delete t.doneAt;
+    if(t.next){const n=S.tasks.find(x=>x.id===t.next);if(n&&!n.done)S.tasks=S.tasks.filter(x=>x.id!==n.id);delete t.next;}
+  }
+}
+function quickDates(){
+  const n=new Date(),toMon=(7-dow(n))%7||7;
+  return [["Demain",dkey(addDays(n,1))],["Après-demain",dkey(addDays(n,2))],["Lundi",dkey(addDays(n,toMon))],["+1 semaine",null]];
+}
+function openTaskSheet(id){
+  const t=S.tasks.find(x=>x.id===id);if(!t)return;
+  draft={type:"task",id,subject:t.subject,rep:t.rep||"",due:t.due};
+  drawTaskSheet(t);
+}
+function drawTaskSheet(t){
+  const chip=(k,v,label,col,on)=>`<button class="chip ${on?"on":""}" style="--c:${col}" data-action="dsel" data-k="${k}" data-v="${v}">${label}</button>`;
+  const el=document.getElementById("sheet");
+  el.innerHTML=`<div class="sheet-bg" data-action="closesheet"></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Modifier le devoir">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="sheet-head"><h2>Modifier le devoir</h2>${t.done?`<span class="modetag">Fait</span>`:""}</div>
+    <input class="field" id="taskText" value="${esc(t.text)}" placeholder="Description" aria-label="Description">
+    <p class="lbl">Matière</p>
+    <div class="chips left">${SUBJECTS.map(([sid,n])=>chip("subject",sid,n,scol(sid),sid===draft.subject)).join("")}</div>
+    <p class="lbl">Pour le</p>
+    <input class="field nomt" type="date" id="taskDue" value="${draft.due}" aria-label="Pour le">
+    <div class="quick">${quickDates().map(([l,k])=>`<button class="chip" style="--c:var(--accent)" data-action="taskdate" data-id="${k||"+7"}">${l}</button>`).join("")}</div>
+    <p class="lbl">Répétition <span class="muted">recréé automatiquement quand tu le coches</span></p>
+    <div class="chips left">${Object.entries(REPS).map(([k,l])=>chip("rep",k,l,"var(--accent)",k===draft.rep)).join("")}</div>
+    <div class="sheet-actions">
+      <button class="btn stop" data-action="delsheet">Supprimer</button>
+      <button class="btn primary" data-action="savesheet" id="saveBtn">Enregistrer</button>
+    </div>
+  </div>`;
+  document.body.classList.add("sheet-open");
+  requestAnimationFrame(()=>el.classList.add("open"));
+}
+function saveTaskSheet(){
+  const t=S.tasks.find(x=>x.id===draft.id);if(!t){closeSheet();return;}
+  const txt=document.getElementById("taskText").value.trim(),due=document.getElementById("taskDue").value;
+  if(!txt||!due)return;
+  Object.assign(t,{text:txt,subject:draft.subject,due});
+  if(draft.rep)t.rep=draft.rep;else delete t.rep;
+  closeSheet();save();render();
+}
+
 function viewDevoirs(){
   const t=todayKey(),open=S.tasks.filter(x=>!x.done).sort((a,b)=>a.due.localeCompare(b.due));
   const groups=[["En retard",open.filter(x=>x.due<t)],["Aujourd’hui",open.filter(x=>x.due===t)],["À venir",open.filter(x=>x.due>t)]].filter(g=>g[1].length);
-  const done=S.tasks.filter(x=>x.done).slice(-15).reverse();
+  const done=S.tasks.filter(x=>x.done).map((x,i)=>[x,i]).sort((a,b)=>(b[0].doneAt||"").localeCompare(a[0].doneAt||"")||b[1]-a[1]).slice(0,15).map(a=>a[0]);
   return `
   <header class="top"><div><h1>Devoirs</h1></div><div class="stamp">à faire<b>${z(open.length)}</b></div></header>
   <section class="panel">
@@ -1016,6 +1078,7 @@ function viewDevoirs(){
       <input class="full" name="text" placeholder="Ex. DM de physique, exos 3 à 7" aria-label="Description" required ${refocus==="task"?"data-refocus":""}>
       <select name="subject" aria-label="Matière">${subjectOptions(S.lastSubject)}</select>
       <input type="date" name="due" value="${dkey(addDays(new Date(),1))}" aria-label="Pour le" required>
+      <select name="rep" class="full" aria-label="Répétition">${Object.entries(REPS).map(([k,l])=>`<option value="${k}">${k?l:"Ne se répète pas"}</option>`).join("")}</select>
       <button class="btn primary full">Ajouter</button>
     </form>
   </section>
@@ -1212,7 +1275,9 @@ document.addEventListener("click",e=>{
     case "stop":stop();break;
     case "subject":S.lastSubject=id;save();render();break;
     case "goal":{const v=prompt("Objectif de travail par jour (en heures)",String(S.goal/60).replace(".",","));if(v===null)break;const n=parseFloat(v.replace(",","."));if(n>0&&n<=16){S.goal=Math.round(n*60);save();render();}break;}
-    case "toggle":{const t=S.tasks.find(x=>x.id===id);if(t){t.done=!t.done;save();render();}break;}
+    case "toggle":{const t=S.tasks.find(x=>x.id===id);if(t){toggleTask(t);save();render();}break;}
+    case "edittask":openTaskSheet(id);break;
+    case "taskdate":{if(!draft)break;const inp=document.getElementById("taskDue");const k=id==="+7"?dkey(addDays(keyDate(inp.value||todayKey()),7)):id;inp.value=k;draft.due=k;break;}
     case "deltask":S.tasks=S.tasks.filter(x=>x.id!==id);save();render();break;
     case "delsess":S.sessions=S.sessions.filter(x=>x.id!==id);save();render();break;
     case "delslot":S.slots=S.slots.filter(x=>x.id!==id);save();render();break;
@@ -1235,8 +1300,9 @@ document.addEventListener("click",e=>{
     case "addat":{const r=b.getBoundingClientRect(),hh=parseFloat(getComputedStyle(b).getPropertyValue("--h"))||46;openSheet({day:+id,date:b.dataset.date,h:Math.min(22,+b.dataset.h0+Math.floor((e.clientY-r.top)/hh))});break;}
     case "dsel":if(draft)sheetSelect(b);break;
     case "closesheet":closeSheet();break;
-    case "savesheet":if(draft)saveSheet();break;
+    case "savesheet":if(draft)draft.type==="task"?saveTaskSheet():saveSheet();break;
     case "delsheet":if(!draft)break;
+      if(draft.type==="task"){if(confirm("Supprimer ce devoir ?")){S.tasks=S.tasks.filter(x=>x.id!==draft.id);closeSheet();save();render();}break;}
       if(draft.eid){if(confirm("Supprimer ce créneau ?")){S.events=S.events.filter(x=>x.id!==draft.eid);closeSheet();save();render();}}
       else if(draft.type==="sess"){if(confirm("Supprimer cette session ?")){S.sessions=S.sessions.filter(x=>x.id!==draft.id);closeSheet();save();render();}}
       else if(confirm("Supprimer ce créneau ?")){S.slots=S.slots.filter(x=>x.id!==draft.id);closeSheet();save();render();}
@@ -1274,7 +1340,7 @@ document.addEventListener("submit",e=>{
   }
   if(kind==="task"){
     if(!d.text.trim())return;
-    S.tasks.push({id:uid(),text:d.text.trim(),subject:d.subject,due:d.due,done:false});
+    S.tasks.push({id:uid(),text:d.text.trim(),subject:d.subject,due:d.due,done:false,...(d.rep?{rep:d.rep}:{})});
     S.lastSubject=d.subject;refocus="task";
   }
   if(kind==="slot"){
