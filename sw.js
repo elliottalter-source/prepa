@@ -1,5 +1,5 @@
 // Fait marcher l'appli hors ligne (métro, mode avion)
-const CACHE = "prepa-v3";
+const CACHE = "prepa-v4";
 const SHELL = ["./", "./index.html", "./firebase-config.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
