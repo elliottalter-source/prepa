@@ -17,7 +17,7 @@
   --bg:#020305; --glass:rgba(140,170,255,.045); --glass-2:rgba(140,170,255,.085);
   --edge:rgba(150,180,255,.13); --edge-2:rgba(150,180,255,.26); --track:rgba(150,180,255,.08);
   --text:#e8eefc; --muted:#8a94ab; --faint:#4d566b;
-  --accent:#7fe3ff; --accent-ink:#04121a; --danger:#ff7a8a;
+  --accent:#7fe3ff; --accent-ink:#04121a; --danger:#ff7a8a; --rev:var(--accent);
   --s-maths:#6f9bff; --s-physique:#b78bff; --s-chimie:#5ff0b0; --s-info:#ffb35c;
   --s-francais:#ff7fb6; --s-anglais:#e9e36d; --s-autre:#9aa3b5; --s-tipe:#ff6f4f;
   --f-ui:"Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -276,6 +276,8 @@ h2 .modetag{ margin-right:auto; }
 .wk-blk span{ font-family:var(--f-num); font-size:9.5px; color:var(--muted); line-height:1.1; }
 .wk-blk.perso{ border:1px dashed var(--c); background:repeating-linear-gradient(135deg, color-mix(in srgb, var(--c) 22%, transparent) 0 4px, transparent 4px 9px), rgba(10,14,24,.7); box-shadow:none; }
 .wk-blk.past{ opacity:.45; }
+.wk-blk.rev b{ white-space:normal; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:var(--lc,2); -webkit-box-orient:vertical; }
+.sw.rev{ border-left-color:var(--rev); background:color-mix(in srgb, var(--rev) 30%, transparent); box-shadow:0 0 8px color-mix(in srgb, var(--rev) 45%, transparent); }
 @media (min-width:720px){ .wk-blk b{ font-size:12px; } .wk-blk span{ font-size:11px; } .wk-blk{ padding:4px 6px; } }
 .edt-legend{ list-style:none; padding:0; margin:14px 2px 0; display:flex; flex-wrap:wrap; gap:6px 18px; font-size:12.5px; color:var(--muted); }
 .edt-legend li{ display:flex; align-items:center; gap:8px; }
@@ -478,7 +480,10 @@ body::after{ background-image:radial-gradient(rgba(170,195,255,.09) 1px, transpa
 const SUBJECTS=[["maths","Maths"],["physique","Physique"],["chimie","Chimie"],["info","Info"],["francais","Français-philo"],["anglais","Anglais"],["tipe","TIPE"],["autre","Autre"]];
 const SABBR={maths:"Maths",physique:"Phys",chimie:"Chim",info:"Info",francais:"Fr",anglais:"Angl",tipe:"TIPE",autre:"Autre"};
 const SNAME=Object.fromEntries(SUBJECTS);
-const KINDS=["Cours","TD","TP","Colle","DS","Perso"];
+const KINDS=["Cours","TD","TP","Colle","DS","Perso","Révision"];
+const isRev=s=>s.kind==="Révision";
+const kcol=s=>isRev(s)?"var(--rev)":scol(s.subject);
+const normK=x=>(x||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 const DAYS=["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 const scol=id=>`var(--s-${id})`;
 const ICONS={
@@ -567,8 +572,8 @@ function legend(entries){return `<ul class="legend">${entries.map(([id,ms])=>`<l
 function slotItem(s,isToday){
   const t=nowHM();
   const cls=isToday?(s.end<=t?"past":(s.start<=t?"now":"")):"";
-  const meta=[s.kind,s.who,s.place].filter(Boolean).map(esc).join(", ");
-  return `<li class="slot ${cls} ${isPerso(s)?"perso":""} ${s.date?"evt":""}" ${isToday?"":`data-action="${s.date?"editevt":"editslot"}" data-id="${s.id}" role="button" tabindex="0"`}><span class="time">${s.start}<br>${s.end}</span><i style="background:${barBg(s)};color:${scol(s.subject)}"></i><div class="what"><b>${SNAME[s.subject]}</b>${meta?`<span>${meta}</span>`:""}</div>${isToday?"":`<span class="chev" aria-hidden="true">›</span>`}</li>`;
+  const meta=(isRev(s)?[SNAME[s.subject],s.place]:[s.kind,s.who,s.place]).filter(Boolean).map(esc).join(", ");
+  return `<li class="slot ${cls} ${isPerso(s)?"perso":""} ${isRev(s)?"rev":""} ${s.date&&!isRev(s)?"evt":""}" ${isToday?"":`data-action="${s.date?"editevt":"editslot"}" data-id="${s.id}" role="button" tabindex="0"`}><span class="time">${s.start}<br>${s.end}</span><i style="background:${barBg(s)};color:${kcol(s)}"></i><div class="what"><b>${isRev(s)?esc(s.who||"Révision"):SNAME[s.subject]}</b>${meta?`<span>${meta}</span>`:""}</div>${isToday?"":`<span class="chev" aria-hidden="true">›</span>`}</li>`;
 }
 function taskItem(t){
   const late=!t.done&&t.due<todayKey();
@@ -601,14 +606,14 @@ function parseImport(txt){
     const m=l.match(/^(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2})[:h](\d{2})\s*[-–]\s*(\d{1,2})[:h](\d{2})\s+(\S+)(?:\s+([^;]+?))?\s*(?:;\s*([^;]*?)\s*)?(?:;\s*(.*?)\s*)?$/i);
     if(!m){bad.push(l);return;}
     let date=m[1];if(date.includes("/")){const [d,mo,y]=date.split("/");date=`${y}-${z(+mo)}-${z(+d)}`;}
-    const kindRaw=(m[7]||"Colle").trim(),kind=KINDS.find(k=>k.toLowerCase()===kindRaw.toLowerCase())||"Colle";
+    const kindRaw=(m[7]||"Colle").trim(),kind=KINDS.find(k=>normK(k)===normK(kindRaw))||"Colle";
     out.push({date,start:`${z(+m[2])}:${m[3]}`,end:`${z(+m[4])}:${m[5]}`,subject:subjFromText(m[6]),kind,who:(m[8]||"").trim(),place:(m[9]||"").trim()});
   });
   return {out,bad};
 }
 const toMin=t=>{const [h,m]=t.split(":").map(Number);return h*60+m;};
 const fromMin=m=>`${z(Math.floor(m/60))}:${z(m%60)}`;
-const barBg=s=>isPerso(s)?`repeating-linear-gradient(180deg,${scol(s.subject)} 0 3px,transparent 3px 6px)`:scol(s.subject);
+const barBg=s=>isPerso(s)?`repeating-linear-gradient(180deg,${scol(s.subject)} 0 3px,transparent 3px 6px)`:kcol(s);
 
 /* --- Vues --- */
 function viewAccueil(){
@@ -751,7 +756,7 @@ function weekGrid(){
     groups.forEach(g=>{const lanes=[];g.forEach(o=>{let k=lanes.findIndex(e=>e<=o.a);if(k<0){k=lanes.length;lanes.push(0);}lanes[k]=o.b;o.lane=k;});g.forEach(o=>o.n=lanes.length);});
     const blocks=l.map(o=>{
       const hh=(o.b-o.a)/60,x=o.x;
-      return `<button class="wk-blk ${isPerso(x)?"perso":""} ${x.date?"evt":""} ${(i===td&&o.b<=nowM)||weekOff<0?"past":""}" style="--c:${scol(x.subject)};top:calc(var(--h)*${pos(o.a)});height:calc(var(--h)*${hh.toFixed(3)} - 2px);left:calc(${o.lane}/${o.n}*100% + 1px);width:calc(100%/${o.n} - 2px)" data-action="${x.date?"editevt":"editslot"}" data-id="${x.id}" aria-label="${SNAME[x.subject]}, ${esc(x.kind)}, ${DAYS[i]} ${x.start} à ${x.end}"><b>${SABBR[x.subject]}</b>${hh>=.75?`<span>${x.date&&x.kind!=="Cours"?esc(x.kind):x.start}</span>`:""}</button>`;
+      return `<button class="wk-blk ${isPerso(x)?"perso":""} ${isRev(x)?"rev":""} ${x.date&&!isRev(x)?"evt":""} ${(i===td&&o.b<=nowM)||weekOff<0?"past":""}" style="--c:${kcol(x)};--lc:${hh<.75?1:Math.max(1,Math.floor((hh-.3)/.27))};top:calc(var(--h)*${pos(o.a)});height:calc(var(--h)*${hh.toFixed(3)} - 2px);left:calc(${o.lane}/${o.n}*100% + 1px);width:calc(100%/${o.n} - 2px)" data-action="${x.date?"editevt":"editslot"}" data-id="${x.id}" aria-label="${isRev(x)?esc(x.who||"Révision")+", ":""}${SNAME[x.subject]}, ${esc(x.kind)}, ${DAYS[i]} ${x.start} à ${x.end}">${isRev(x)?`<b>${esc(x.who||"Révision")}</b>${hh>=.75?`<span>${x.start}–${x.end}</span>`:""}`:`<b>${SABBR[x.subject]}</b>${hh>=.75?`<span>${x.date&&x.kind!=="Cours"?esc(x.kind):x.start}</span>`:""}`}</button>`;
     }).join("");
     const nowLine=i===td&&nowM>=h0*60&&nowM<=h1*60?`<div class="wk-now" style="top:calc(var(--h)*${pos(nowM)})"><i></i></div>`:"";
     return `<div class="wk-day ${i===td?"today":""}" data-action="addat" data-id="${i}" data-date="${dkey(d)}" data-h0="${h0}">${blocks}${nowLine}</div>`;
@@ -785,11 +790,11 @@ function viewEdt(){
       <div class="daytabs">${DAYS.map((d,i)=>`<button class="${i===edtDay?"on":""} ${i===td?"today":""}" data-action="day" data-id="${i}" aria-label="${d}">${d.slice(0,3)}</button>`).join("")}</div>
       <h2>${DAYS[edtDay]}</h2>
       ${slots.length?`<ul class="list">${slots.map(x=>slotItem(x,false)).join("")}</ul>`:`<p class="empty">Aucun créneau le ${DAYS[edtDay].toLowerCase()}.</p>`}`}
-    <ul class="edt-legend"><li><i class="sw"></i>Cours, TD, TP</li><li><i class="sw evt"></i>Colle, DS</li><li><i class="sw perso"></i>Travail perso</li></ul>
+    <ul class="edt-legend"><li><i class="sw"></i>Cours, TD, TP</li><li><i class="sw evt"></i>Colle, DS</li><li><i class="sw perso"></i>Travail perso</li><li><i class="sw rev"></i>Révisions</li></ul>
     ${n===0?`<p class="empty edt-empty">${mode==="vacances"?"Ton planning de vacances est vide. Touche un créneau de la grille ou « Ajouter » pour le remplir.":"Touche un endroit de la grille ou « Ajouter » pour créer ton premier créneau."}</p>${mode==="vacances"&&persoType?`<button class="link" data-action="copyperso">Reprendre mes ${persoType} créneau${persoType>1?"x":""} perso de la semaine type</button>`:""}`:""}
   </section>
   ${(()=>{
-    const t=todayKey(),up=S.events.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start)),shown=showAllEv?up:up.slice(0,5);
+    const t=todayKey(),up=S.events.filter(e=>e.date>=t&&!isRev(e)).sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start)),shown=showAllEv?up:up.slice(0,5);
     return `<section class="panel">
       <h2>Colles et DS <button class="link" data-action="importev">Importer</button></h2>
       ${importMsg?`<p class="okmsg">${esc(importMsg)}</p>`:""}
@@ -832,7 +837,7 @@ function drawSheet(first){
     <p class="lbl">Matière</p>
     <div class="chips left">${SUBJECTS.map(([id,n])=>chip("subject",id,n,scol(id),id===draft.subject)).join("")}</div>
     <p class="lbl">Type</p>
-    <div class="chips left kinds">${KINDS.map(k=>chip("kind",k,k,k==="Perso"?"var(--accent)":"var(--muted)",k===draft.kind)).join("")}</div>
+    <div class="chips left kinds">${KINDS.map(k=>chip("kind",k,k,k==="Perso"||k==="Révision"?"var(--rev)":"var(--muted)",k===draft.kind)).join("")}</div>
     <div class="wheels">
       <div><p class="lbl">Début</p>${wheel("start")}</div>
       <div><p class="lbl">Fin</p>${wheel("end")}</div>
@@ -908,10 +913,10 @@ function openImport(){
   draft={type:"import"};
   const el=document.getElementById("sheet");
   el.innerHTML=`<div class="sheet-bg" data-action="closesheet"></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label="Importer des colles et DS">
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Importer des créneaux">
     <div class="grab" aria-hidden="true"></div>
-    <div class="sheet-head"><h2>Importer des colles et DS</h2></div>
-    <p class="muted imp-help">Colle une ligne par créneau, au format :<br><code>2026-11-02 17:30-18:30 Chimie Colle ; Colleur ; Salle</code></p>
+    <div class="sheet-head"><h2>Importer des créneaux</h2></div>
+    <p class="muted imp-help">Colle une ligne par créneau, au format :<br><code>2026-11-02 17:30-18:30 Chimie Colle ; Colleur ; Salle</code><br>Pour une révision : <code>2026-11-18 16:30-17:45 Physique Révision ; MF3.7 Spin coating</code></p>
     <textarea class="field imp" id="impIn" rows="8" placeholder="Colle ici le texte que Claude t’a préparé" aria-label="Texte à importer"></textarea>
     <p class="durline" id="impMsg"></p>
     <div class="sheet-actions">
